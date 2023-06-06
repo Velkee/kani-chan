@@ -1,14 +1,14 @@
 mod commands;
 
-use std::env;
 use dotenv::dotenv;
+use std::env;
 
 use serenity::{
     async_trait,
-    framework::standard::{StandardFramework, macros::group},
+    framework::standard::{macros::group, StandardFramework},
     model::prelude::*,
-    prelude::*
-    };
+    prelude::*,
+};
 
 use crate::commands::event::*;
 
@@ -38,10 +38,10 @@ async fn main() {
     let mut client = Client::builder(token, intents)
         .event_handler(Handler)
         .framework(framework)
-        .await.expect("Error creating client");
+        .await
+        .expect("Error creating client");
 
     if let Err(why) = client.start().await {
-        eprintln!("An error occured while running the client: {:?}", why);
+        println!("An error occured while running the client: {:?}", why);
     }
 }
-
