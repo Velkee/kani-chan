@@ -1,7 +1,17 @@
-use std::{time::Duration, env};
+use std::{env, time::Duration};
 
 use chrono::prelude::*;
-use serenity::{prelude::*, framework::{standard::{macros::*, CommandResult}, StandardFramework}, async_trait, model::{prelude::{*, application::interaction::InteractionResponseType, component::ButtonStyle}}};
+use serenity::{
+    async_trait,
+    framework::{
+        standard::{macros::*, CommandResult},
+        StandardFramework,
+    },
+    model::prelude::{
+        application::interaction::InteractionResponseType, component::ButtonStyle, *,
+    },
+    prelude::*,
+};
 
 use dotenv::dotenv;
 
@@ -51,23 +61,40 @@ async fn event(ctx: &Context, msg: &Message) -> CommandResult {
         ("morning", "today")
     };
 
-    let first_contact = msg.channel_id.send_message(&ctx, |m| {
-        m.content(format!("Good {time_of_day}! I will be helping you manage your events {day_night}")).components(|c| {
-            c.create_action_row(|r| {
-                r.create_button(|btn| {
-                    btn.custom_id("create").label("create").style(ButtonStyle::Success)
-                });
-                r.create_button(|btn| {
-                    btn.custom_id("edit").label("edit").style(ButtonStyle::Primary)
-                });
-                r.create_button(|btn| {
-                        btn.custom_id("delete").label("delete").style(ButtonStyle::Danger)
+    let first_contact = msg
+        .channel_id
+        .send_message(&ctx, |m| {
+            m.content(format!(
+                "Good {time_of_day}! I will be helping you manage your events {day_night}"
+            ))
+            .components(|c| {
+                c.create_action_row(|r| {
+                    r.create_button(|btn| {
+                        btn.custom_id("create")
+                            .label("create")
+                            .style(ButtonStyle::Success)
+                    });
+                    r.create_button(|btn| {
+                        btn.custom_id("edit")
+                            .label("edit")
+                            .style(ButtonStyle::Primary)
+                    });
+                    r.create_button(|btn| {
+                        btn.custom_id("delete")
+                            .label("delete")
+                            .style(ButtonStyle::Danger)
+                    })
                 })
             })
         })
-    }).await.unwrap();
+        .await
+        .unwrap();
 
-    let interaction = match first_contact.await_component_interaction(&ctx).timeout(Duration::from_secs(60 * 3)).await {
+    let interaction = match first_contact
+        .await_component_interaction(&ctx)
+        .timeout(Duration::from_secs(60 * 3))
+        .await
+    {
         Some(x) => x,
         None => {
             first_contact.reply(&ctx, "Timed out").await.unwrap();
@@ -77,12 +104,18 @@ async fn event(ctx: &Context, msg: &Message) -> CommandResult {
 
     let event_option = &interaction.data.custom_id;
 
-    interaction.create_interaction_response(&ctx, |r| {
-        r.kind(InteractionResponseType::ChannelMessageWithSource).interaction_response_data(|d| {
-            d.ephemeral(true)
-                .content(format!("Understood, what event would you like to {}?", event_option))
+    interaction
+        .create_interaction_response(&ctx, |r| {
+            r.kind(InteractionResponseType::ChannelMessageWithSource)
+                .interaction_response_data(|d| {
+                    d.ephemeral(true).content(format!(
+                        "Understood, what event would you like to {}?",
+                        event_option
+                    ))
+                })
         })
-    }).await.unwrap();
+        .await
+        .unwrap();
 
     first_contact.delete(&ctx).await.unwrap();
 
