@@ -1,7 +1,7 @@
 use std::{time::Duration, env};
 
 use chrono::prelude::*;
-use serenity::{prelude::*, framework::{standard::{macros::*, Args, CommandResult}, StandardFramework}, async_trait, model::prelude::{*, application::interaction::InteractionResponseType, component::ButtonStyle}};
+use serenity::{prelude::*, framework::{standard::{macros::*, CommandResult}, StandardFramework}, async_trait, model::{prelude::{*, application::interaction::InteractionResponseType, component::ButtonStyle}}};
 
 use dotenv::dotenv;
 
@@ -40,7 +40,7 @@ async fn main() {
 }
 
 #[command]
-async fn event(ctx: &Context, msg: &Message, _: Args) -> CommandResult {
+async fn event(ctx: &Context, msg: &Message) -> CommandResult {
     let hour = Local::now().hour();
 
     let (time_of_day, day_night) = if hour >= 17 {
@@ -55,13 +55,13 @@ async fn event(ctx: &Context, msg: &Message, _: Args) -> CommandResult {
         m.content(format!("Good {time_of_day}! I will be helping you manage your events {day_night}")).components(|c| {
             c.create_action_row(|r| {
                 r.create_button(|btn| {
-                    btn.custom_id("create").style(ButtonStyle::Success)
+                    btn.custom_id("create").label("create").style(ButtonStyle::Success)
                 });
                 r.create_button(|btn| {
-                    btn.custom_id("edit").style(ButtonStyle::Primary)
+                    btn.custom_id("edit").label("edit").style(ButtonStyle::Primary)
                 });
                 r.create_button(|btn| {
-                        btn.custom_id("delete").style(ButtonStyle::Danger)
+                        btn.custom_id("delete").label("delete").style(ButtonStyle::Danger)
                 })
             })
         })
@@ -71,17 +71,20 @@ async fn event(ctx: &Context, msg: &Message, _: Args) -> CommandResult {
         Some(x) => x,
         None => {
             first_contact.reply(&ctx, "Timed out").await.unwrap();
-            return;
+            return Ok(());
         }
     };
 
-    let event_option = &interaction.data.values[0];
+    let event_option = &interaction.data.custom_id;
 
     interaction.create_interaction_response(&ctx, |r| {
-        r.kind(InteractionResponseType::UpdateMessage).interaction_response_data(|d| {
-            d.content(format!("Of course! Now, let's what event would you like to {}?", event_option))
+        r.kind(InteractionResponseType::ChannelMessageWithSource).interaction_response_data(|d| {
+            d.ephemeral(true)
+                .content(format!("Understood, what event would you like to {}?", event_option))
         })
     }).await.unwrap();
+
+    first_contact.delete(&ctx).await.unwrap();
 
     Ok(())
 }
