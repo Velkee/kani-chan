@@ -16,7 +16,7 @@ impl APIClient {
         string: &str,
         string_algorithm: Option<&str>,
         page: i32,
-    ) -> Response {
+    ) -> Result<Response, reqwest::Error> {
         let mut search: Vec<String> = vec![];
 
         let index_string = match indexes {
@@ -49,7 +49,6 @@ impl APIClient {
             .get(format!("https://xivapi.com/search?{search_string}"))
             .send()
             .await
-            .unwrap()
     }
 }
 
