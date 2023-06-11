@@ -1,18 +1,10 @@
 [package]
-name = "kani-chan"
+name = "xivapi-rust"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-chrono = "0.4.26"
-dotenv = "0.15.0"
-serenity = { version = "0.11.5", features = ["collector"]}
+reqwest = "0.11.18"
 tokio = { version = "1.28.2", features = ["full"] }
-xivapi-rust = { path = "./xivapi-rust" }
-
-[workspace]
-members = [
-    "xivapi-rust"
-]

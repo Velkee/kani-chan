@@ -71,33 +71,32 @@ async fn event(ctx: &Context, msg: &Message) -> CommandResult {
                 c.create_action_row(|r| {
                     r.create_button(|btn| {
                         btn.custom_id("create")
-                            .label("create")
+                            .label("Create")
                             .style(ButtonStyle::Success)
                     });
                     r.create_button(|btn| {
                         btn.custom_id("edit")
-                            .label("edit")
+                            .label("Edit")
                             .style(ButtonStyle::Primary)
                     });
                     r.create_button(|btn| {
                         btn.custom_id("delete")
-                            .label("delete")
+                            .label("Delete")
                             .style(ButtonStyle::Danger)
                     })
                 })
             })
         })
-        .await
-        .unwrap();
+        .await?;
 
     let interaction = match first_contact
-        .await_component_interaction(&ctx)
+        .await_component_interaction(ctx)
         .timeout(Duration::from_secs(60 * 3))
         .await
     {
         Some(x) => x,
         None => {
-            first_contact.reply(&ctx, "Timed out").await.unwrap();
+            first_contact.reply(&ctx, "Timed out").await?;
             return Ok(());
         }
     };
@@ -106,18 +105,25 @@ async fn event(ctx: &Context, msg: &Message) -> CommandResult {
 
     interaction
         .create_interaction_response(&ctx, |r| {
-            r.kind(InteractionResponseType::ChannelMessageWithSource)
+            r.kind(InteractionResponseType::UpdateMessage)
                 .interaction_response_data(|d| {
-                    d.ephemeral(true).content(format!(
-                        "Understood, what event would you like to {}?",
-                        event_option
-                    ))
+                    d.ephemeral(true)
+                        .content(format!(
+                            "Understood, what event would you like to {}?",
+                            event_option
+                        ))
+                        .components(|c| {
+                            c.create_action_row(|r| {
+                                r.create_button(|b| {
+                                    b.custom_id("test")
+                                        .label("Test")
+                                        .style(ButtonStyle::Primary)
+                                })
+                            })
+                        })
                 })
         })
-        .await
-        .unwrap();
-
-    first_contact.delete(&ctx).await.unwrap();
+        .await?;
 
     Ok(())
 }
