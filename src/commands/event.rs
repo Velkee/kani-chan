@@ -1,11 +1,14 @@
 use std::time::Duration;
 
 use chrono::prelude::*;
+use serenity::builder::CreateSelectMenuOption;
 use serenity::framework::standard::CommandResult;
 use serenity::model::application::interaction::InteractionResponseType;
 use serenity::model::prelude::component::ButtonStyle;
 use serenity::prelude::*;
 use serenity::{framework::standard::macros::command, model::prelude::*};
+
+use crate::database::events::get_events;
 
 #[command]
 async fn event(ctx: &Context, msg: &Message) -> CommandResult {
@@ -19,7 +22,7 @@ async fn event(ctx: &Context, msg: &Message) -> CommandResult {
         ("morning", "today")
     };
 
-    let first_contact = msg
+    let message = msg
         .channel_id
         .send_message(&ctx, |m| {
             m.content(format!(
@@ -47,41 +50,57 @@ async fn event(ctx: &Context, msg: &Message) -> CommandResult {
         })
         .await?;
 
-    let interaction = match first_contact
+    let interaction = match message
         .await_component_interaction(ctx)
         .timeout(Duration::from_secs(60 * 3))
         .await
     {
         Some(x) => x,
         None => {
-            first_contact.reply(&ctx, "Timed out").await?;
+            message.reply(&ctx, "Timed out").await?;
+            message.delete(&ctx).await?;
             return Ok(());
         }
     };
 
     let event_option = &interaction.data.custom_id;
 
-    interaction
-        .create_interaction_response(&ctx, |r| {
-            r.kind(InteractionResponseType::UpdateMessage)
-                .interaction_response_data(|d| {
-                    d.ephemeral(true)
-                        .content(format!(
-                            "Understood, what event would you like to {}?",
-                            event_option
-                        ))
-                        .components(|c| {
-                            c.create_action_row(|r| {
-                                r.create_button(|b| {
-                                    b.custom_id("test")
-                                        .label("Test")
-                                        .style(ButtonStyle::Primary)
+    if event_option == "edit" {
+        let options = get_options();
+        interaction
+            .create_interaction_response(&ctx, |r| {
+                r.kind(InteractionResponseType::UpdateMessage)
+                    .interaction_response_data(|d| {
+                        d.content("Of course! Which event would you like to edit?")
+                            .components(|c| {
+                                c.create_action_row(|r| {
+                                    r.create_select_menu(|m| {
+                                        m.custom_id("event select")
+                                            .options(|o| o.set_options(options))
+                                    })
                                 })
                             })
-                        })
-                })
-        })
-        .await?;
+                    })
+            })
+            .await?;
+    };
 
     Ok(())
+}
+
+fn get_options() -> Vec<CreateSelectMenuOption> {
+    let mut options: Vec<CreateSelectMenuOption> = vec![];
+
+    for event in get_events() {
+        let mut option = CreateSelectMenuOption::default();
+        option.label(event.title).value(event.id);
+        match event.description {
+            Some(description) => option.description(description),
+            None => &mut option,
+        };
+
+        options.push(option);
+    }
+
+    options
 }
