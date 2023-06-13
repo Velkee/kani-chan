@@ -1,17 +1,35 @@
 use std::time::Duration;
 
 use chrono::prelude::*;
-use serenity::builder::CreateSelectMenuOption;
+use serenity::builder::{CreateComponents, CreateSelectMenuOption};
+use serenity::framework::standard::macros::command;
 use serenity::framework::standard::CommandResult;
 use serenity::model::application::interaction::InteractionResponseType;
 use serenity::model::prelude::component::ButtonStyle;
+use serenity::model::prelude::*;
 use serenity::prelude::*;
-use serenity::{framework::standard::macros::command, model::prelude::*};
 
 use crate::database::events::get_events;
 
 #[command]
 async fn event(ctx: &Context, msg: &Message) -> CommandResult {
+    fn get_options() -> Vec<CreateSelectMenuOption> {
+        let mut options: Vec<CreateSelectMenuOption> = Vec::new();
+
+        for event in get_events() {
+            let mut option = CreateSelectMenuOption::default();
+            option.label(event.title).value(event.id);
+            match event.description {
+                Some(description) => option.description(description),
+                None => &mut option,
+            };
+
+            options.push(option);
+        }
+
+        options
+    }
+
     let hour = Local::now().hour();
 
     let (time_of_day, day_night) = if hour >= 17 {
@@ -26,7 +44,8 @@ async fn event(ctx: &Context, msg: &Message) -> CommandResult {
         .channel_id
         .send_message(&ctx, |m| {
             m.content(format!(
-                "Good {time_of_day}! I will be helping you manage your events {day_night}"
+                "Good {}! I will be helping you manage your events {}",
+                time_of_day, day_night
             ))
             .components(|c| {
                 c.create_action_row(|r| {
@@ -50,57 +69,69 @@ async fn event(ctx: &Context, msg: &Message) -> CommandResult {
         })
         .await?;
 
-    let interaction = match message
+    let interaction = if let Some(interaction) = message
         .await_component_interaction(ctx)
         .timeout(Duration::from_secs(60 * 3))
         .await
     {
-        Some(x) => x,
-        None => {
-            message.reply(&ctx, "Timed out").await?;
-            message.delete(&ctx).await?;
-            return Ok(());
-        }
+        interaction
+    } else {
+        message.reply(&ctx, "Timed out").await?;
+        message.delete(&ctx).await?;
+        return Ok(());
     };
 
-    let event_option = &interaction.data.custom_id;
+    let event_option = interaction.data.custom_id.to_owned();
 
-    if event_option == "edit" {
-        let options = get_options();
-        interaction
-            .create_interaction_response(&ctx, |r| {
-                r.kind(InteractionResponseType::UpdateMessage)
-                    .interaction_response_data(|d| {
-                        d.content("Of course! Which event would you like to edit?")
-                            .components(|c| {
-                                c.create_action_row(|r| {
-                                    r.create_select_menu(|m| {
-                                        m.custom_id("event select")
-                                            .options(|o| o.set_options(options))
+    match event_option.as_str() {
+        "create" => {
+            interaction
+                .create_interaction_response(&ctx, |r| {
+                    r.kind(InteractionResponseType::UpdateMessage)
+                        .interaction_response_data(|d| {
+                            d.content("Understood! What would you like to call the event?")
+                                .set_components(CreateComponents::default())
+                        })
+                })
+                .await?;
+
+            if let Some(event_title) = msg
+                .channel_id
+                .await_reply(ctx)
+                .timeout(Duration::from_secs(60 * 3))
+                .await
+            {
+                println!("{}", event_title.content)
+            } else {
+                message.reply(&ctx, "Timed out").await?;
+            };
+
+            Ok(())
+        }
+        "edit" => {
+            let options = get_options();
+            interaction
+                .create_interaction_response(&ctx, |r| {
+                    r.kind(InteractionResponseType::UpdateMessage)
+                        .interaction_response_data(|d| {
+                            d.content("Of course! Which event would you like to edit?")
+                                .components(|c| {
+                                    c.create_action_row(|r| {
+                                        r.create_select_menu(|m| {
+                                            m.custom_id("event select")
+                                                .options(|o| o.set_options(options))
+                                        })
                                     })
                                 })
-                            })
-                    })
-            })
-            .await?;
-    };
+                        })
+                })
+                .await?;
 
-    Ok(())
-}
-
-fn get_options() -> Vec<CreateSelectMenuOption> {
-    let mut options: Vec<CreateSelectMenuOption> = vec![];
-
-    for event in get_events() {
-        let mut option = CreateSelectMenuOption::default();
-        option.label(event.title).value(event.id);
-        match event.description {
-            Some(description) => option.description(description),
-            None => &mut option,
-        };
-
-        options.push(option);
+            Ok(())
+        }
+        _ => {
+            message.reply(&ctx, "Invalid interaction").await?;
+            Ok(())
+        }
     }
-
-    options
 }
