@@ -1,43 +1,51 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::prelude::*;
-use serenity::builder::{CreateComponents, CreateSelectMenuOption};
-use serenity::framework::standard::macros::command;
-use serenity::framework::standard::CommandResult;
-use serenity::model::application::interaction::InteractionResponseType;
-use serenity::model::prelude::component::ButtonStyle;
-use serenity::model::prelude::interaction::message_component::MessageComponentInteraction;
-use serenity::model::prelude::*;
-use serenity::prelude::*;
+
+use diesel::SqliteConnection;
+use serenity::{
+    builder::{CreateComponents, CreateSelectMenuOption},
+    framework::standard::{macros::command, CommandResult},
+    model::{
+        application::interaction::InteractionResponseType,
+        prelude::{component::ButtonStyle, *},
+    },
+    prelude::*,
+};
 
 use kani_chan::{establish_connection, get_events};
 
-#[command]
-async fn event(ctx: &Context, msg: &Message) -> CommandResult {
-    fn get_options() -> Vec<CreateSelectMenuOption> {
-        let connection = &mut establish_connection();
-        let mut options: Vec<CreateSelectMenuOption> = Vec::new();
+async fn handle_timeout(ctx: &Context, message: Message) {
+    message.reply(&ctx, "Timed out").await.unwrap();
+    message.delete(&ctx).await.unwrap();
+}
 
-        for event in get_events(connection) {
-            let mut option = CreateSelectMenuOption::default();
-            option.label(event.title).value(event.id);
-            match event.description {
-                Some(description) => option.description(description),
-                None => &mut option,
-            };
+fn get_options(connection: &mut SqliteConnection) -> Vec<CreateSelectMenuOption> {
+    let mut options: Vec<CreateSelectMenuOption> = Vec::new();
 
-            options.push(option);
-        }
+    for event in get_events(connection) {
+        let mut option = CreateSelectMenuOption::default();
+        option.label(event.title).value(event.id);
+        match event.description {
+            Some(description) => option.description(description),
+            None => &mut option,
+        };
 
-        options
+        options.push(option);
     }
 
-    let hour = Local::now().hour();
+    options
+}
 
-    let (time_of_day, day_night) = if hour >= 17 {
+#[command]
+async fn event(ctx: &Context, msg: &Message) -> CommandResult {
+    let connection = &mut establish_connection();
+
+    let hours = Local::now().hour();
+
+    let (time_of_day, day_night) = if hours >= 17 {
         ("evening", "tonight")
-    } else if hour >= 12 {
+    } else if hours >= 12 {
         ("afternoon", "today")
     } else {
         ("morning", "today")
@@ -45,30 +53,31 @@ async fn event(ctx: &Context, msg: &Message) -> CommandResult {
 
     let message = msg
         .channel_id
-        .send_message(&ctx, |m| {
-            m.content(format!(
-                "Good {}! I will be helping you manage your events {}",
-                time_of_day, day_night
-            ))
-            .components(|c| {
-                c.create_action_row(|r| {
-                    r.create_button(|btn| {
-                        btn.custom_id("create")
-                            .label("Create")
-                            .style(ButtonStyle::Success)
-                    });
-                    r.create_button(|btn| {
-                        btn.custom_id("edit")
-                            .label("Edit")
-                            .style(ButtonStyle::Primary)
-                    });
-                    r.create_button(|btn| {
-                        btn.custom_id("delete")
-                            .label("Delete")
-                            .style(ButtonStyle::Danger)
+        .send_message(&ctx, |message| {
+            message
+                .content(format!(
+                    "Good {}! I will be helping you manage your events {}",
+                    time_of_day, day_night
+                ))
+                .components(|components| {
+                    components.create_action_row(|row| {
+                        row.create_button(|btn| {
+                            btn.custom_id("create")
+                                .label("Create")
+                                .style(ButtonStyle::Success)
+                        });
+                        row.create_button(|btn| {
+                            btn.custom_id("edit")
+                                .label("Edit")
+                                .style(ButtonStyle::Primary)
+                        });
+                        row.create_button(|btn| {
+                            btn.custom_id("delete")
+                                .label("Delete")
+                                .style(ButtonStyle::Danger)
+                        })
                     })
                 })
-            })
         })
         .await?;
 
@@ -89,8 +98,9 @@ async fn event(ctx: &Context, msg: &Message) -> CommandResult {
     match event_option.as_str() {
         "create" => {
             interaction
-                .create_interaction_response(&ctx, |r| {
-                    r.kind(InteractionResponseType::UpdateMessage)
+                .create_interaction_response(&ctx, |response| {
+                    response
+                        .kind(InteractionResponseType::UpdateMessage)
                         .interaction_response_data(|d| {
                             d.content("Understood! What would you like to call the event?")
                                 .set_components(CreateComponents::default())
@@ -113,8 +123,8 @@ async fn event(ctx: &Context, msg: &Message) -> CommandResult {
 
             let message = msg
                 .channel_id
-                .send_message(&ctx, |m| {
-                    m.content(format!("Is the title {} correct?", title))
+                .send_message(&ctx, |message| {
+                    message.content(format!("Is the title {} correct?", title))
                 })
                 .await?;
 
@@ -125,8 +135,7 @@ async fn event(ctx: &Context, msg: &Message) -> CommandResult {
             {
                 interaction
             } else {
-                message.reply(&ctx, "Timed out").await?;
-                message.delete(&ctx).await?;
+                handle_timeout(ctx, message).await;
                 return Ok(());
             };
 
@@ -135,16 +144,18 @@ async fn event(ctx: &Context, msg: &Message) -> CommandResult {
             Ok(())
         }
         "edit" => {
-            let options = get_options();
+            let options = get_options(connection);
             interaction
-                .create_interaction_response(&ctx, |r| {
-                    r.kind(InteractionResponseType::UpdateMessage)
+                .create_interaction_response(&ctx, |response| {
+                    response
+                        .kind(InteractionResponseType::UpdateMessage)
                         .interaction_response_data(|d| {
                             d.content("Of course! Which event would you like to edit?")
-                                .components(|c| {
-                                    c.create_action_row(|r| {
-                                        r.create_select_menu(|m| {
-                                            m.custom_id("event select")
+                                .components(|components| {
+                                    components.create_action_row(|row| {
+                                        row.create_select_menu(|message| {
+                                            message
+                                                .custom_id("event select")
                                                 .options(|o| o.set_options(options))
                                         })
                                     })
