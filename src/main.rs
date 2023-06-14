@@ -1,5 +1,4 @@
 mod commands;
-mod database;
 
 use crate::commands::event::EVENT_COMMAND;
 use std::env;

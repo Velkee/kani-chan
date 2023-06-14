@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::prelude::*;
@@ -6,17 +7,19 @@ use serenity::framework::standard::macros::command;
 use serenity::framework::standard::CommandResult;
 use serenity::model::application::interaction::InteractionResponseType;
 use serenity::model::prelude::component::ButtonStyle;
+use serenity::model::prelude::interaction::message_component::MessageComponentInteraction;
 use serenity::model::prelude::*;
 use serenity::prelude::*;
 
-use crate::database::events::get_events;
+use kani_chan::{establish_connection, get_events};
 
 #[command]
 async fn event(ctx: &Context, msg: &Message) -> CommandResult {
     fn get_options() -> Vec<CreateSelectMenuOption> {
+        let connection = &mut establish_connection();
         let mut options: Vec<CreateSelectMenuOption> = Vec::new();
 
-        for event in get_events() {
+        for event in get_events(connection) {
             let mut option = CreateSelectMenuOption::default();
             option.label(event.title).value(event.id);
             match event.description {
@@ -81,7 +84,7 @@ async fn event(ctx: &Context, msg: &Message) -> CommandResult {
         return Ok(());
     };
 
-    let event_option = interaction.data.custom_id.to_owned();
+    let event_option = &interaction.data.custom_id;
 
     match event_option.as_str() {
         "create" => {
@@ -95,16 +98,39 @@ async fn event(ctx: &Context, msg: &Message) -> CommandResult {
                 })
                 .await?;
 
-            if let Some(event_title) = msg
+            let title = if let Some(event_title) = msg
                 .channel_id
                 .await_reply(ctx)
                 .timeout(Duration::from_secs(60 * 3))
                 .await
             {
-                println!("{}", event_title.content)
+                event_title.content.to_owned()
             } else {
                 message.reply(&ctx, "Timed out").await?;
+                message.delete(&ctx).await?;
+                return Ok(());
             };
+
+            let message = msg
+                .channel_id
+                .send_message(&ctx, |m| {
+                    m.content(format!("Is the title {} correct?", title))
+                })
+                .await?;
+
+            let interaction = if let Some(interaction) = message
+                .await_component_interaction(ctx)
+                .timeout(Duration::from_secs(60 * 3))
+                .await
+            {
+                interaction
+            } else {
+                message.reply(&ctx, "Timed out").await?;
+                message.delete(&ctx).await?;
+                return Ok(());
+            };
+
+            let confirmation = &interaction.data.custom_id;
 
             Ok(())
         }
@@ -130,7 +156,14 @@ async fn event(ctx: &Context, msg: &Message) -> CommandResult {
             Ok(())
         }
         _ => {
-            message.reply(&ctx, "Invalid interaction").await?;
+            message
+                .reply(
+                    &ctx,
+                    "Invalid interaction, please contact your local Rust developer",
+                )
+                .await?;
+            message.delete(&ctx).await?;
+
             Ok(())
         }
     }
