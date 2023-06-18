@@ -8,7 +8,9 @@ use serenity::{
     framework::standard::{macros::command, CommandResult},
     model::{
         application::interaction::InteractionResponseType,
-        prelude::{component::ButtonStyle, *},
+        prelude::{
+            component::ButtonStyle, interaction::message_component::MessageComponentInteraction, *,
+        },
     },
     prelude::*,
 };
@@ -16,9 +18,11 @@ use serenity::{
 use kani_chan::{establish_connection, get_events};
 
 // Handles a message timeout with a message and deleting it
-async fn handle_timeout(ctx: &Context, message: Message) {
-    message.reply(&ctx, "Timed out").await.unwrap();
-    message.delete(&ctx).await.unwrap();
+async fn handle_timeout(ctx: &Context, message: Message) -> Result<(), serenity::Error> {
+    message.reply(&ctx, "Timed out").await?;
+    message.delete(&ctx).await?;
+
+    Ok(())
 }
 
 // Retrieves the select menu options for events
@@ -57,6 +61,16 @@ async fn send_interactable(
 async fn ask_title(msg: &Message, ctx: &Context) -> Option<Arc<Message>> {
     msg.channel_id
         .await_reply(ctx)
+        .timeout(Duration::from_secs(60 * 3))
+        .await
+}
+
+async fn await_message_interaction(
+    message: &Message,
+    ctx: &Context,
+) -> Option<Arc<MessageComponentInteraction>> {
+    message
+        .await_component_interaction(ctx)
         .timeout(Duration::from_secs(60 * 3))
         .await
 }
@@ -106,15 +120,11 @@ async fn event(ctx: &Context, msg: &Message) -> CommandResult {
     )
     .await?;
 
-    let interaction = if let Some(interaction) = message
-        .await_component_interaction(ctx)
-        .timeout(Duration::from_secs(60 * 3))
-        .await
-    {
+    let interaction = if let Some(interaction) = await_message_interaction(&message, ctx).await {
         interaction
     } else {
-        message.reply(&ctx, "Timed out").await?;
-        message.delete(&ctx).await?;
+        handle_timeout(ctx, message).await?;
+
         return Ok(());
     };
 
@@ -162,22 +172,20 @@ async fn event(ctx: &Context, msg: &Message) -> CommandResult {
                 )
                 .await?;
 
-                let interaction = if let Some(interaction) = message
-                    .await_component_interaction(ctx)
-                    .timeout(Duration::from_secs(60 * 3))
-                    .await
-                {
-                    interaction
-                } else {
-                    handle_timeout(ctx, message).await;
-                    return Ok(());
-                };
+                let interaction =
+                    if let Some(interaction) = await_message_interaction(&message, ctx).await {
+                        interaction
+                    } else {
+                        handle_timeout(ctx, message).await?;
+
+                        return Ok(());
+                    };
 
                 let confirmation = &interaction.data.custom_id;
 
                 println!("{}", confirmation);
             } else {
-                handle_timeout(ctx, message).await
+                handle_timeout(ctx, message).await?
             }
 
             Ok(())
