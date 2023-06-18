@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use chrono::prelude::*;
 
@@ -15,11 +15,13 @@ use serenity::{
 
 use kani_chan::{establish_connection, get_events};
 
+// Handles a message timeout with a message and deleting it
 async fn handle_timeout(ctx: &Context, message: Message) {
     message.reply(&ctx, "Timed out").await.unwrap();
     message.delete(&ctx).await.unwrap();
 }
 
+// Retrieves the select menu options for events
 fn get_options(connection: &mut SqliteConnection) -> Vec<CreateSelectMenuOption> {
     let mut options: Vec<CreateSelectMenuOption> = Vec::new();
 
@@ -37,6 +39,28 @@ fn get_options(connection: &mut SqliteConnection) -> Vec<CreateSelectMenuOption>
     options
 }
 
+// Quick function to create and return a message with interactable components
+async fn send_interactable(
+    ctx: &Context,
+    msg: &Message,
+    content: String,
+    components: CreateComponents,
+) -> Result<Message, serenity::Error> {
+    msg.channel_id
+        .send_message(ctx, |message| {
+            message.content(content).set_components(components)
+        })
+        .await
+}
+
+// Asks for an event title
+async fn ask_title(msg: &Message, ctx: &Context) -> Option<Arc<Message>> {
+    msg.channel_id
+        .await_reply(ctx)
+        .timeout(Duration::from_secs(60 * 3))
+        .await
+}
+
 #[command]
 async fn event(ctx: &Context, msg: &Message) -> CommandResult {
     let connection = &mut establish_connection();
@@ -51,35 +75,36 @@ async fn event(ctx: &Context, msg: &Message) -> CommandResult {
         ("morning", "today")
     };
 
-    let message = msg
-        .channel_id
-        .send_message(&ctx, |message| {
-            message
-                .content(format!(
-                    "Good {}! I will be helping you manage your events {}",
-                    time_of_day, day_night
-                ))
-                .components(|components| {
-                    components.create_action_row(|row| {
-                        row.create_button(|btn| {
-                            btn.custom_id("create")
-                                .label("Create")
-                                .style(ButtonStyle::Success)
-                        });
-                        row.create_button(|btn| {
-                            btn.custom_id("edit")
-                                .label("Edit")
-                                .style(ButtonStyle::Primary)
-                        });
-                        row.create_button(|btn| {
-                            btn.custom_id("delete")
-                                .label("Delete")
-                                .style(ButtonStyle::Danger)
-                        })
-                    })
-                })
+    let mut components = CreateComponents::default();
+
+    components.create_action_row(|row| {
+        row.create_button(|btn| {
+            btn.custom_id("create")
+                .label("Create")
+                .style(ButtonStyle::Success)
+        });
+        row.create_button(|btn| {
+            btn.custom_id("edit")
+                .label("Edit")
+                .style(ButtonStyle::Primary)
+        });
+        row.create_button(|btn| {
+            btn.custom_id("delete")
+                .label("Delete")
+                .style(ButtonStyle::Danger)
         })
-        .await?;
+    });
+
+    let message = send_interactable(
+        ctx,
+        msg,
+        format!(
+            "Good {}! I will be helping you manage your events {}",
+            time_of_day, day_night
+        ),
+        components,
+    )
+    .await?;
 
     let interaction = if let Some(interaction) = message
         .await_component_interaction(ctx)
@@ -108,38 +133,52 @@ async fn event(ctx: &Context, msg: &Message) -> CommandResult {
                 })
                 .await?;
 
-            let title = if let Some(event_title) = msg
-                .channel_id
-                .await_reply(ctx)
-                .timeout(Duration::from_secs(60 * 3))
-                .await
-            {
-                event_title.content.to_owned()
-            } else {
-                message.reply(&ctx, "Timed out").await?;
-                message.delete(&ctx).await?;
-                return Ok(());
-            };
+            if let Some(title) = ask_title(msg, ctx).await {
+                let mut components = CreateComponents::default();
 
-            let message = msg
-                .channel_id
-                .send_message(&ctx, |message| {
-                    message.content(format!("Is the title {} correct?", title))
-                })
+                components.create_action_row(|row| {
+                    row.create_button(|btn| {
+                        btn.custom_id("confirm")
+                            .label("Yes")
+                            .style(ButtonStyle::Success)
+                    });
+                    row.create_button(|btn| {
+                        btn.custom_id("cancel")
+                            .label("No")
+                            .style(ButtonStyle::Danger)
+                    });
+                    row.create_button(|btn| {
+                        btn.custom_id("quit")
+                            .label("Cancel event creation")
+                            .style(ButtonStyle::Danger)
+                    })
+                });
+
+                send_interactable(
+                    ctx,
+                    msg,
+                    format!("Is the title {} correct?", title.content),
+                    components,
+                )
                 .await?;
 
-            let interaction = if let Some(interaction) = message
-                .await_component_interaction(ctx)
-                .timeout(Duration::from_secs(60 * 3))
-                .await
-            {
-                interaction
-            } else {
-                handle_timeout(ctx, message).await;
-                return Ok(());
-            };
+                let interaction = if let Some(interaction) = message
+                    .await_component_interaction(ctx)
+                    .timeout(Duration::from_secs(60 * 3))
+                    .await
+                {
+                    interaction
+                } else {
+                    handle_timeout(ctx, message).await;
+                    return Ok(());
+                };
 
-            let confirmation = &interaction.data.custom_id;
+                let confirmation = &interaction.data.custom_id;
+
+                println!("{}", confirmation);
+            } else {
+                handle_timeout(ctx, message).await
+            }
 
             Ok(())
         }

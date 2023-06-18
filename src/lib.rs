@@ -8,6 +8,7 @@ use std::env;
 
 use models::NewEvent;
 
+/// Establishes a connection to the SQLite database
 pub fn establish_connection() -> SqliteConnection {
     dotenv().ok();
 
@@ -16,6 +17,7 @@ pub fn establish_connection() -> SqliteConnection {
         .unwrap_or_else(|_| panic!("Error connecting to {}", database_url))
 }
 
+/// Fetches events from the database
 pub fn get_events(conn: &mut SqliteConnection) -> Vec<Event> {
     use crate::schema::events::dsl::*;
 
@@ -25,6 +27,7 @@ pub fn get_events(conn: &mut SqliteConnection) -> Vec<Event> {
         .expect("Error loading posts")
 }
 
+/// Create an event and insert it into the database
 pub fn create_event(conn: &mut SqliteConnection, title: &str, date: &str, description: &str) {
     use crate::schema::events;
 
