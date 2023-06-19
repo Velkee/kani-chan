@@ -1,7 +1,6 @@
 mod commands;
 
 use crate::commands::event::EVENT_COMMAND;
-use crate::commands::hello::HELLO_COMMAND;
 
 use std::env;
 
@@ -15,7 +14,7 @@ use serenity::{
 use dotenv::dotenv;
 
 #[group]
-#[commands(event, hello)]
+#[commands(event)]
 struct General;
 
 struct Handler;
