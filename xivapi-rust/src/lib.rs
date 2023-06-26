@@ -1,7 +1,50 @@
-use reqwest::{Client, Response};
+use ::serde::{Deserialize, Serialize};
+use reqwest::Client;
 
 pub struct APIClient {
     client: Client,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Pagination {
+    #[serde(rename = "Page")]
+    page: i32,
+    #[serde(rename = "PageNext")]
+    page_next: Option<i32>,
+    #[serde(rename = "PagePrev")]
+    page_prev: Option<i32>,
+    #[serde(rename = "PageTotal")]
+    page_total: i32,
+    #[serde(rename = "Results")]
+    results: i32,
+    #[serde(rename = "ResultsPerPage")]
+    results_per_page: i32,
+    #[serde(rename = "ResultsTotal")]
+    results_total: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SearchItem {
+    #[serde(rename = "ID")]
+    id: i32,
+    #[serde(rename = "Icon")]
+    icon: String,
+    #[serde(rename = "Name")]
+    name: String,
+    #[serde(rename = "Url")]
+    url: String,
+    #[serde(rename = "UrlType")]
+    url_type: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SearchResponse {
+    #[serde(rename = "Pagination")]
+    pagination: Pagination,
+    #[serde(rename = "Results")]
+    results: Vec<SearchItem>,
+    #[serde(rename = "SpeedMs")]
+    speed_ms: i32,
 }
 
 impl APIClient {
@@ -16,39 +59,30 @@ impl APIClient {
         string: &str,
         string_algorithm: Option<&str>,
         page: i32,
-    ) -> Result<Response, reqwest::Error> {
-        let mut search: Vec<String> = vec![];
+    ) -> Result<SearchResponse, reqwest::Error> {
+        let mut search = Vec::new();
 
-        let index_string = match indexes {
-            Some(indexes) => format!("indexes={}", indexes.join(", ")),
-            None => String::from(""),
-        };
-
-        if !index_string.is_empty() {
-            search.push(index_string);
+        if let Some(indexes) = &indexes {
+            search.push(format!("indexes={}", indexes.join(",")));
         }
 
         search.push(format!("string={}", string));
 
-        let string_algo = match string_algorithm {
-            Some(algorighm) => format!("string_algo={algorighm}"),
-            None => String::from(""),
-        };
-
-        if !string_algo.is_empty() {
-            search.push(string_algo)
+        if let Some(algorithm) = string_algorithm {
+            search.push(format!("string_algo={}", algorithm));
         }
 
-        let page_string = format!("page={page}");
+        search.push(format!("page={}", page));
 
-        search.push(page_string);
-
-        let search_string = search.join("&");
-
-        self.client
-            .get(format!("https://xivapi.com/search?{search_string}"))
+        let response: SearchResponse = self
+            .client
+            .get(format!("https://xivapi.com/search?{}", search.join("&")))
             .send()
-            .await
+            .await?
+            .json()
+            .await?;
+
+        Ok(response)
     }
 }
 

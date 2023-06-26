@@ -1931,5 +1931,6 @@ name = "xivapi-rust"
 version = "0.1.0"
 dependencies = [
  "reqwest",
+ "serde",
  "tokio",
 ]
